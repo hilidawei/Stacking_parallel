@@ -23,21 +23,17 @@ from astropy.cosmology import Planck18 as cosmo
 from scipy import ndimage
 from concurrent.futures import ProcessPoolExecutor
 
-# 定义缩放函数
 def scale_image(output_coords, scale, imwidth):
     mid = imwidth // 2
     return (output_coords[0] / scale + mid - mid / scale, output_coords[1] / scale + mid - mid / scale)
 
-# 主目录设置
 main_dir = '/Volumes/ldw_SSD/eRASS1_new/ero_archive/'
 warnings.simplefilter('ignore', category=AstropyWarning)
 
-# 初始化相关数据
 image_paths = []
 exp_paths = []
 ra_dec_list = []
 
-# 扫描目录，获取image和exposure map文件路径及对应的RA/DEC
 for base_name in os.listdir(main_dir):
     if not base_name.startswith('.') and os.path.isdir(os.path.join(main_dir, base_name)):
         base_dir = os.path.join(main_dir, base_name)
@@ -63,18 +59,15 @@ for base_name in os.listdir(main_dir):
                                 file_path = os.path.join(subfolder_path, file_name)
                                 exp_paths.append(file_path)
 
-# 读入 catalog 数据
 cata = Table.read('../data/0d5_0d6.csv')
 imwidth = 300
 RA = cata['RAdeg'].data
 Dec = cata['DEdeg'].data
 Rf = cata['zCl'].data
 
-# 计算物理距离
 pd = [cosmo.kpc_proper_per_arcmin(Rf[i]) for i in range(len(Rf))]
 Npx = int((min(pd) / max(pd)) * imwidth)
 
-# 用于处理每个源的函数
 def process_source(i):
     global RA, Dec, pd, Npx, imwidth, ra_dec_list, image_paths, exp_paths
 
@@ -98,7 +91,6 @@ def process_source(i):
 
             try:
                 with fits.open(image_path) as f1, fits.open(exp_path) as f2:
-                    # 处理图像文件
                     wcs = WCS(f1[0].header)
                     cts = f1[0].data
                     pixel_x, pixel_y = skycoord_to_pixel(SkyCoord(ra*u.deg, dec*u.deg, frame='fk5'), wcs)
@@ -109,32 +101,26 @@ def process_source(i):
                         cts1 = cutout.data
         
 
-                        # 处理曝光图
                         wcs2 = WCS(f2[0].header)
                         exp = f2[0].data
                         cutout2 = Cutout2D(exp, SkyCoord(ra*u.deg, dec*u.deg, frame='fk5'), imwidth, wcs2, mode='partial', fill_value=0)
                         exp1 = cutout2.data
 
-                        # 缩放图像
                         ps = pd[i] / max(pd)
                         start_time = time.time()
                         cts_img = ndimage.geometric_transform(cts1, scale_image, cval=0, order=0, extra_keywords={'scale': ps, 'imwidth': imwidth})
                         exp_img = ndimage.geometric_transform(exp1, scale_image, cval=0, order=0, extra_keywords={'scale': ps, 'imwidth': imwidth})
                         end_time = time.time()
 
-                        # 切割图像
                         cts_img_cut = Cutout2D(cts_img, (imwidth/2 - 0.5, imwidth/2 - 0.5), Npx)
                         exp_img_cut = Cutout2D(exp_img, (imwidth/2 - 0.5, imwidth/2 - 0.5), Npx)
                         
 
 
-                        # 将中间结果保存到磁盘，避免占用过多内存
                         np.save(f'../temp/cts_img_cut_{i}.npy', cts_img_cut.data)
                         np.save(f'../temp/exp_img_cut_{i}.npy', exp_img_cut.data)
                         print(f'Complete source {i}, time: {end_time - start_time:.2f}s')
                         
-
-                        # 返回成功标志
                         return True
                         break
 
@@ -143,9 +129,8 @@ def process_source(i):
             
     return False
 
-# 并行处理所有源
 if __name__ == '__main__':
-    with ProcessPoolExecutor(max_workers=7) as executor:
+    with ProcessPoolExecutor(max_workers=8) as executor:
         results = list(executor.map(process_source, range(len(RA))))
 
     print('Successfully processed all images')
