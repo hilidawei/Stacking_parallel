@@ -1,2 +1,1 @@
-# Stacking_parallel
-X-ray imaging stacking and multi-process approach
+A collection of X-ray imaging (probably and spectrum) stacking programs.
